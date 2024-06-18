@@ -90,10 +90,13 @@ class OCRWorker(QtCore.QThread):
         self.running = True
         while self.running:
             try:
+                logging.info("Starting screenshot capture and OCR processing.")
                 screenshot = pyautogui.screenshot(region=self.region)
                 screenshot.save(self.screenshot_path)
                 screenshot = screenshot.convert('L')
                 text = pytesseract.image_to_string(screenshot)
+                
+                logging.info(f"Extracted text: {text}")
 
                 self.process_text(text)
 
@@ -106,17 +109,22 @@ class OCRWorker(QtCore.QThread):
                             message = f"/qbissue product: {self.product} ticket_link: {browser_link} qb_link: {self.qb_link} issue: {self.error}"
                         self.resultReady.emit(message)
                         self.notifyReady.emit("All information gathered successfully!")
-                        self.reset()  # Reset after successful emission
+                        self.stop()
 
                 time.sleep(0.2)
             except Exception as e:
-                print(f"Error during OCR processing: {e}")
+                logging.error(f"Error during OCR processing: {e}")
 
     def process_text(self, text):
+        logging.info("Processing extracted text.")
         self.error = self.extract_error(text) or self.error
+        logging.info(f"Extracted error: {self.error}")
         self.qb_link = self.extract_qb_link(text) or self.qb_link
+        logging.info(f"Extracted QB link: {self.qb_link}")
         self.qb_id = self.extract_qb_id(text) or self.qb_id
+        logging.info(f"Extracted QB ID: {self.qb_id}")
         self.product = self.extract_product(text) or self.product
+        logging.info(f"Extracted product: {self.product}")
 
     def stop(self):
         self.running = False
@@ -130,14 +138,14 @@ class OCRWorker(QtCore.QThread):
 
         if error_sentences:
             for sentence in error_sentences:
-                if "error" in sentence.lower():
+                if "error" in sentence.lower() or "issue" in sentence.lower():
                     return self.extract_specific_error(sentence)
         return None
 
     def extract_specific_error(self, sentence):
         doc = nlp(sentence)
         for token in doc:
-            if "error" in token.text.lower():
+            if "error" in token.text.lower() or "issue" in token.text.lower():
                 return ' '.join([subtoken.text for subtoken in token.subtree])
         return sentence
 
@@ -182,25 +190,27 @@ class OCRWorker(QtCore.QThread):
             window = None
             for browser_name, (hotkey1, hotkey2) in browsers.items():
                 for w in gw.getWindowsWithTitle(browser_name):
-                    if browser_name in w.title:
+                    if browser_name.lower() in w.title.lower():
                         window = w
                         break
                 if window:
                     break
-            
+
             if window is None:
                 raise Exception("Supported browser window not found")
 
             window.activate()
+            time.sleep(0.1)
             pyautogui.hotkey(hotkey1, hotkey2)
+            time.sleep(0.1)
             pyautogui.hotkey('ctrl', 'c')
-            time.sleep(0.05)
+            time.sleep(0.1)
 
             url = pyperclip.paste()
             return url
 
         except Exception as e:
-            print(f"Error retrieving browser URL: {e}")
+            logging.error(f"Error retrieving browser URL: {e}")
             return None
 
 class CustomTitleBar(QtWidgets.QWidget):
